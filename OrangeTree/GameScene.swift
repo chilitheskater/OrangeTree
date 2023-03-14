@@ -6,83 +6,135 @@
 //
 
 import SpriteKit
-import GameplayKit
+
+
+
 
 class GameScene: SKScene {
-    
-    private var label : SKLabelNode?
-    private var spinnyNode : SKShapeNode?
+    var shapeNode = SKShapeNode()
+    var orangeTree: SKSpriteNode!
+    var orange: Orange?
+    var touchStart: CGPoint = .zero
+    var boundary = SKNode()
+    var numOfLevels: UInt32 = 3
+
+    // Class method to load .sks files
+    static func Load(level: Int) -> GameScene? {
+      return GameScene(fileNamed: "Level-\(level)")
+    }
     
     override func didMove(to view: SKView) {
+        // Configure shapeNode
+        shapeNode.lineWidth = 20
+        shapeNode.lineCap = .round
+        shapeNode.strokeColor = UIColor(white: 1, alpha: 0.3)
+        addChild(shapeNode)
         
-        // Get label node from scene and store it for use later
-        self.label = self.childNode(withName: "//helloLabel") as? SKLabelNode
-        if let label = self.label {
-            label.alpha = 0.0
-            label.run(SKAction.fadeIn(withDuration: 2.0))
-        }
-        
-        // Create shape node to use during mouse interaction
-        let w = (self.size.width + self.size.height) * 0.05
-        self.spinnyNode = SKShapeNode.init(rectOf: CGSize.init(width: w, height: w), cornerRadius: w * 0.3)
-        
-        if let spinnyNode = self.spinnyNode {
-            spinnyNode.lineWidth = 2.5
             
-            spinnyNode.run(SKAction.repeatForever(SKAction.rotate(byAngle: CGFloat(Double.pi), duration: 1)))
-            spinnyNode.run(SKAction.sequence([SKAction.wait(forDuration: 0.5),
-                                              SKAction.fadeOut(withDuration: 0.5),
-                                              SKAction.removeFromParent()]))
-        }
-    }
-    
-    
-    func touchDown(atPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.green
-            self.addChild(n)
-        }
-    }
-    
-    func touchMoved(toPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.blue
-            self.addChild(n)
-        }
-    }
-    
-    func touchUp(atPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.red
-            self.addChild(n)
-        }
+        // Set the contact delegate
+        physicsWorld.contactDelegate = self
+        
+        // Setup the boundaries
+        boundary.physicsBody = SKPhysicsBody(edgeLoopFrom: CGRect(origin: .zero, size: size))
+        let background = childNode(withName: "background") as? SKSpriteNode
+        boundary.position = CGPoint(x: (background?.size.width ?? 0) / -2, y: (background?.size.height ?? 0) / -2)
+        addChild(boundary)
+        
+        // Add the Sun to the scene
+        let sun = SKSpriteNode(imageNamed: "Sun")
+        sun.name = "sun"
+        sun.position.x = size.width / 2 - (sun.size.width * 0.75)
+        sun.position.y = size.height / 2 - (sun.size.height * 0.75)
+        addChild(sun)
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if let label = self.label {
-            label.run(SKAction.init(named: "Pulse")!, withKey: "fadeInOut")
+        // Get the location of the touch on the screen
+        let touch = touches.first!
+        let location = touch.location(in: self)
+       
+        // Check if the touch was on the Orange Tree
+        if atPoint(location).name == "tree" {
+            // Create the orange and add it to the scene at the touch location
+            orange = Orange()
+            orange?.physicsBody?.isDynamic = false
+            orange?.position = location
+            addChild(orange!)
+            
+            // Store the location of the touch
+            touchStart = location
         }
         
-        for t in touches { self.touchDown(atPoint: t.location(in: self)) }
-    }
-    
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchMoved(toPoint: t.location(in: self)) }
+        // Check whether the sun was tapped and change the level
+        for node in nodes(at: location) {
+          if node.name == "sun" {
+            let n = Int(arc4random() % numOfLevels + 1)
+            if let scene = GameScene.Load(level: n) {
+              scene.scaleMode = .aspectFill
+              if let view = view {
+                view.presentScene(scene)
+              }
+            }
+          }
+        }
     }
     
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchUp(atPoint: t.location(in: self)) }
+      // Get the location of where the touch ended
+      let touch = touches.first!
+      let location = touch.location(in: self)
+
+      // Get the difference between the start and end point as a vector
+      let dx = touchStart.x - location.x
+      let dy = touchStart.y - location.y
+      let vector = CGVector(dx: dx, dy: dy)
+
+      // Set the Orange dynamic again and apply the vector as an impulse
+      orange?.physicsBody?.isDynamic = true
+      orange?.physicsBody?.applyImpulse(vector)
+        
+    // Remove the path from shapeNode
+    shapeNode.path = nil
     }
     
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchUp(atPoint: t.location(in: self)) }
-    }
     
     
-    override func update(_ currentTime: TimeInterval) {
-        // Called before each frame is rendered
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+      // Get the location of the touch
+      let touch = touches.first!
+      let location = touch.location(in: self)
+
+      // Update the position of the Orange to the current location
+      orange?.position = location
+        // Draw the firing vector
+        let path = UIBezierPath()
+        path.move(to: touchStart)
+        path.addLine(to: location)
+        shapeNode.path = path.cgPath
     }
+    
 }
+
+extension GameScene: SKPhysicsContactDelegate {
+  // Called when the physicsWorld detects two nodes colliding
+  func didBegin(_ contact: SKPhysicsContact) {
+    let nodeA = contact.bodyA.node
+    let nodeB = contact.bodyB.node
+
+    // Check that the bodies collided hard enough
+    if contact.collisionImpulse > 15 {
+      if nodeA?.name == "skull" {
+        removeSkull(node: nodeA!)
+      } else if nodeB?.name == "skull" {
+        removeSkull(node: nodeB!)
+      }
+    }
+  }
+
+  // Function used to remove the Skull node from the scene
+  func removeSkull(node: SKNode) {
+    node.removeFromParent()
+  }
+}
+
+
